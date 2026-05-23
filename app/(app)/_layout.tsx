@@ -2,9 +2,13 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/constants/theme';
+import { WebSocketProvider } from '../../src/hooks/useWebSocket';
+import { ServerUpdateSubscriptions } from '../../src/components/ServerUpdateSubscriptions';
 
 export default function AppLayout() {
   return (
+    <WebSocketProvider>
+    <ServerUpdateSubscriptions />
     <Tabs
       screenOptions={{
         headerStyle: { backgroundColor: Colors.surface },
@@ -41,5 +45,6 @@ export default function AppLayout() {
         }}
       />
     </Tabs>
+    </WebSocketProvider>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,24 +9,33 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useActiveInstance } from '../../hooks/useActiveInstance';
 import { useServerActions } from '../../hooks/useServerActions';
-import { StatusBadge } from '../StatusBadge';
+import { useSubscription } from '../../hooks/useSubscription';
+import { serverApi } from '../../api/serverApi';
+import { formatBytes } from '../MetricBar';
+import { MetricWidget } from './widgets/MetricWidget';
+import { LogsWidget } from './widgets/LogsWidget';
+import { FreetextWidget } from './widgets/FreetextWidget';
 import { Colors, Radius, Spacing } from '../../constants/theme';
-import { GameServerDto, ServerStatus } from '../../types/api';
+import { GameServerDto, MetricPointDto, MetricValues, ServerStatus } from '../../types/api';
 
 const BUSY_STATUSES: ServerStatus[] = ['PULLING_IMAGE', 'AWAITING_UPDATE', 'STOPPING'];
 
-function formatBytes(bytes: number): string {
-  const gb = bytes / 1024 / 1024 / 1024;
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  return `${(bytes / 1024 / 1024).toFixed(0)} MB`;
-}
+const statusMeta: Record<ServerStatus, { label: string; color: string }> = {
+  RUNNING: { label: 'Running', color: Colors.running },
+  STOPPED: { label: 'Stopped', color: Colors.stopped },
+  FAILED: { label: 'Failed', color: Colors.failed },
+  PULLING_IMAGE: { label: 'Pulling Image', color: Colors.pulling },
+  AWAITING_UPDATE: { label: 'Updating', color: Colors.awaiting },
+  STOPPING: { label: 'Stopping', color: Colors.awaiting },
+};
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <Text style={[styles.infoValue, mono && styles.mono]}>{value}</Text>
     </View>
   );
 }
@@ -38,10 +47,39 @@ interface Props {
 
 export function OverviewTab({ uuid, server }: Props) {
   const { startServer, stopServer } = useServerActions();
+  const { apiClient } = useActiveInstance();
   const [actionLoading, setActionLoading] = useState(false);
+  const [metricValues, setMetricValues] = useState<MetricValues | null>(null);
 
   const isBusy = BUSY_STATUSES.includes(server.status) || actionLoading;
   const isRunning = server.status === 'RUNNING';
+  const meta = statusMeta[server.status] ?? statusMeta.STOPPED;
+
+  const layouts = (server.private_dashboard_layouts ?? []).filter((l) => l.valid !== false);
+  const hasMetricWidgets = layouts.some((l) => l.layout_type === 'METRIC');
+
+  useEffect(() => {
+    if (!hasMetricWidgets || !apiClient) return;
+    serverApi
+      .getMetrics(apiClient, uuid)
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setMetricValues(data[data.length - 1].metric_values);
+        }
+      })
+      .catch(() => {});
+  }, [uuid, apiClient, hasMetricWidgets]);
+
+  const handleMetricMessage = useCallback((point: MetricPointDto) => {
+    if (point?.metric_values) {
+      setMetricValues(point.metric_values);
+    }
+  }, []);
+
+  useSubscription<MetricPointDto>(
+    hasMetricWidgets ? `/topics/game-servers/${uuid}/metrics` : null,
+    handleMetricMessage,
+  );
 
   const handleStartStop = () => {
     if (isRunning) {
@@ -74,33 +112,56 @@ export function OverviewTab({ uuid, server }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Status + action */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <StatusBadge status={server.status} />
+      {/* Hero: Status + Action */}
+      <View style={styles.hero}>
+        <View style={styles.heroTop}>
+          <View style={styles.statusSection}>
+            <View style={[styles.statusIndicator, { backgroundColor: meta.color }]} />
+            <Text style={[styles.statusLabel, { color: meta.color }]}>{meta.label}</Text>
+          </View>
           <TouchableOpacity
             style={[styles.actionBtn, isRunning ? styles.stopBtn : styles.startBtn, isBusy && styles.disabledBtn]}
             onPress={handleStartStop}
             disabled={isBusy}
           >
             {actionLoading ? (
-              <ActivityIndicator size="small" color={Colors.text} />
+              <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <View style={styles.actionBtnInner}>
-                <Ionicons name={isRunning ? 'stop' : 'play'} size={14} color={Colors.text} />
+              <>
+                <Ionicons name={isRunning ? 'stop' : 'play'} size={14} color="#fff" />
                 <Text style={styles.actionBtnText}>{isRunning ? 'Stop' : 'Start'}</Text>
-              </View>
+              </>
             )}
           </TouchableOpacity>
         </View>
+
+        {/* Key info inline */}
+        <View style={styles.heroInfo}>
+          <View style={styles.heroInfoItem}>
+            <Text style={styles.heroInfoLabel}>Owner</Text>
+            <Text style={styles.heroInfoValue}>{server.owner.username}</Text>
+          </View>
+          {server.docker_image_tag && (
+            <View style={styles.heroInfoItem}>
+              <Text style={styles.heroInfoLabel}>Version</Text>
+              <Text style={styles.heroInfoValue}>{server.docker_image_tag}</Text>
+            </View>
+          )}
+          {server.docker_hardware_limits && (
+            <View style={styles.heroInfoItem}>
+              <Text style={styles.heroInfoLabel}>CPU / Mem</Text>
+              <Text style={styles.heroInfoValue}>
+                {server.docker_hardware_limits.docker_max_cpu_cores}C / {formatBytes(server.docker_hardware_limits.docker_memory_limit)}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
 
-      {/* Details */}
+      {/* Details card */}
       <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Details</Text>
-        <InfoRow label="Owner" value={`${server.owner.username} (${server.owner.role})`} />
         {server.docker_image_name && (
-          <InfoRow label="Image" value={`${server.docker_image_name}:${server.docker_image_tag ?? 'latest'}`} />
+          <InfoRow label="Image" value={`${server.docker_image_name}:${server.docker_image_tag ?? 'latest'}`} mono />
         )}
         {server.created_on && (
           <InfoRow label="Created" value={new Date(server.created_on).toLocaleDateString()} />
@@ -108,25 +169,53 @@ export function OverviewTab({ uuid, server }: Props) {
         {server.timestamp_last_started && (
           <InfoRow label="Last Started" value={new Date(server.timestamp_last_started).toLocaleString()} />
         )}
+        {server.port_mappings && server.port_mappings.length > 0 && (
+          <>
+            {server.port_mappings.map((p, i) => (
+              <InfoRow key={i} label={`Port ${p.protocol.toUpperCase()}`} value={`${p.host_port} \u2192 ${p.container_port}`} mono />
+            ))}
+          </>
+        )}
       </View>
 
-      {/* Resources */}
-      {server.docker_hardware_limits && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Resources</Text>
-          <InfoRow label="CPU Cores" value={`${server.docker_hardware_limits.docker_max_cpu_cores} cores`} />
-          <InfoRow label="Memory" value={formatBytes(server.docker_hardware_limits.docker_memory_limit)} />
-        </View>
-      )}
+      {/* Dashboard widgets */}
+      {layouts.length > 0 && (
+        <>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionLine} />
+            <Text style={styles.sectionTitle}>Dashboard</Text>
+            <View style={styles.sectionLine} />
+          </View>
+          <View style={styles.grid}>
+            {layouts.map((layout) => {
+              const key = layout.uuid ?? `${layout.layout_type}-${layout.metric_type}`;
+              const isSmall = layout.size === 'SMALL';
 
-      {/* Ports */}
-      {server.port_mappings && server.port_mappings.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Ports</Text>
-          {server.port_mappings.map((p, i) => (
-            <InfoRow key={i} label={p.protocol.toUpperCase()} value={`${p.host_port} \u2192 ${p.container_port}`} />
-          ))}
-        </View>
+              switch (layout.layout_type) {
+                case 'METRIC':
+                  return metricValues ? (
+                    <View key={key} style={isSmall ? styles.halfItem : styles.fullItem}>
+                      <MetricWidget metricType={layout.metric_type ?? ''} metricValues={metricValues} />
+                    </View>
+                  ) : null;
+                case 'LOGS':
+                  return (
+                    <View key={key} style={isSmall ? styles.halfItem : styles.fullItem}>
+                      <LogsWidget uuid={uuid} />
+                    </View>
+                  );
+                case 'FREETEXT':
+                  return (
+                    <View key={key} style={isSmall ? styles.halfItem : styles.fullItem}>
+                      <FreetextWidget title={layout.title} content={layout.content} />
+                    </View>
+                  );
+                default:
+                  return null;
+              }
+            })}
+          </View>
+        </>
       )}
     </ScrollView>
   );
@@ -135,31 +224,112 @@ export function OverviewTab({ uuid, server }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   content: { padding: Spacing.md, gap: Spacing.sm },
+
+  // Hero
+  hero: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    gap: 6,
+  },
+  startBtn: { backgroundColor: Colors.running },
+  stopBtn: { backgroundColor: Colors.failed },
+  disabledBtn: { opacity: 0.5 },
+  actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+
+  heroInfo: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingTop: Spacing.sm,
+    gap: Spacing.md,
+  },
+  heroInfoItem: {
+    flex: 1,
+    gap: 2,
+  },
+  heroInfoLabel: {
+    color: Colors.textMuted,
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  heroInfoValue: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+
+  // Cards
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
     padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    gap: 10,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  infoLabel: { color: Colors.textSecondary, fontSize: 13 },
+  infoValue: { color: Colors.text, fontSize: 13, flexShrink: 1, textAlign: 'right', maxWidth: '60%' },
+  mono: { fontFamily: 'Courier' },
+
+  // Section header
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  sectionLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Colors.border,
+  },
+  sectionTitle: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+
+  // Grid
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { color: Colors.textSecondary, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 2 },
-  infoLabel: { color: Colors.textSecondary, fontSize: 13 },
-  infoValue: { color: Colors.text, fontSize: 13, fontFamily: 'Courier', flexShrink: 1, textAlign: 'right', maxWidth: '60%' },
-  actionBtn: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: Radius.sm,
-    minWidth: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  startBtn: { backgroundColor: Colors.running },
-  stopBtn: { backgroundColor: Colors.failed },
-  disabledBtn: { opacity: 0.5 },
-  actionBtnText: { color: Colors.text, fontWeight: '600', fontSize: 13 },
+  halfItem: { width: '48%' },
+  fullItem: { width: '100%' },
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useActiveInstance } from '../../hooks/useActiveInstance';
 import { useServerActions } from '../../hooks/useServerActions';
 import { useServer } from '../../hooks/useServers';
+import { useSubscription } from '../../hooks/useSubscription';
 import { serverApi } from '../../api/serverApi';
 import { LogEntry } from '../../types/api';
 import { LogViewer } from '../LogViewer';
@@ -44,7 +45,9 @@ export function LogsConsoleTab({ uuid }: Props) {
     setError(null);
     try {
       const data = await serverApi.getLogs(apiClient, uuid, 500, sinceHours);
-      setLogs(data ?? []);
+      const entries = data ?? [];
+      entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      setLogs(entries);
     } catch (e: any) {
       console.error('[logs] error:', e.response?.status, e.response?.data ?? e.message);
       setError('Failed to load logs');
@@ -54,6 +57,18 @@ export function LogsConsoleTab({ uuid }: Props) {
   };
 
   useEffect(() => { fetchLogs(); }, [uuid, sinceHours, apiClient]);
+
+  // Live log streaming via WebSocket
+  const handleLogMessage = useCallback((entry: LogEntry) => {
+    if (entry?.message) {
+      setLogs((prev) => [...prev, entry]);
+    }
+  }, []);
+
+  useSubscription<LogEntry>(
+    `/topics/game-servers/${uuid}/logs`,
+    handleLogMessage,
+  );
 
   const handleSend = async () => {
     const cmd = command.trim();
@@ -66,7 +81,6 @@ export function LogsConsoleTab({ uuid }: Props) {
     setSending(true);
     try {
       await sendCommand(uuid, cmd);
-      setTimeout(fetchLogs, 1000);
     } catch {
       Alert.alert('Error', 'Failed to send command');
     } finally {
@@ -150,25 +164,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    backgroundColor: Colors.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   filters: { flexDirection: 'row', gap: 6 },
   chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: Radius.full,
-    backgroundColor: Colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
-  chipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { color: Colors.textSecondary, fontSize: 11, fontWeight: '600' },
-  chipTextActive: { color: Colors.text },
-  refreshBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  chipActive: { backgroundColor: Colors.primaryMuted },
+  chipText: { color: Colors.textMuted, fontSize: 12, fontWeight: '600' },
+  chipTextActive: { color: Colors.primary },
+  refreshBtn: { width: 36, height: 36, borderRadius: Radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.surface },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   errorText: { color: Colors.error, fontSize: 14 },
   retryBtn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, backgroundColor: Colors.surface, borderRadius: Radius.sm },
@@ -176,31 +185,28 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: 'row',
     padding: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     gap: Spacing.sm,
     backgroundColor: Colors.surface,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Colors.border,
     alignItems: 'center',
   },
   input: {
     flex: 1,
     backgroundColor: Colors.surfaceAlt,
     borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Colors.border,
     color: Colors.text,
     fontSize: 13,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 8,
+    paddingVertical: 10,
     fontFamily: 'Courier',
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: Radius.sm,
+    width: 38,
+    height: 38,
+    borderRadius: Radius.full,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnDisabled: { opacity: 0.5 },
+  sendBtnDisabled: { opacity: 0.4 },
 });

@@ -32,9 +32,7 @@ export default function ServerDetailLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: server?.server_name ?? 'Server' }} />
-      <Stack.Screen name="logs" options={{ href: null }} />
-      <Stack.Screen name="metrics" options={{ href: null }} />
-      <Stack.Screen name="console" options={{ href: null }} />
+      <Stack.Screen name="settings" options={{ title: 'Settings' }} />
     </Stack>
   );
 }

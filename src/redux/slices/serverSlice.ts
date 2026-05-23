@@ -34,6 +34,14 @@ const serverSlice = createSlice({
         instanceServers[serverUuid].status = status;
       }
     },
+    updateServer: (
+      state,
+      action: PayloadAction<{ instanceId: string; server: GameServerDto }>,
+    ) => {
+      const { instanceId, server } = action.payload;
+      if (!state.servers[instanceId]) state.servers[instanceId] = {};
+      state.servers[instanceId][server.uuid] = server;
+    },
     clearServers: (state, action: PayloadAction<string>) => {
       const instanceId = action.payload;
       delete state.servers[instanceId];
@@ -49,7 +57,7 @@ const serverSlice = createSlice({
   },
 });
 
-export const { setServers, updateServerStatus, clearServers, setLoading, setError } =
+export const { setServers, updateServer, updateServerStatus, clearServers, setLoading, setError } =
   serverSlice.actions;
 
 export default serverSlice.reducer;

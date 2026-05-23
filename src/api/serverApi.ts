@@ -1,5 +1,15 @@
 import { AxiosInstance } from 'axios';
-import { GameServerDto, LogEntry, MetricPointDto, PermissionDto, ServerStatusDto } from '../types/api';
+import {
+  GameServerDto,
+  GameServerUpdateDto,
+  LogEntry,
+  MetricPointDto,
+  PermissionDto,
+  RCONConfiguration,
+  ServerDesign,
+  ServerStatusDto,
+  WebhookDto,
+} from '../types/api';
 
 export const serverApi = {
   listServers: (client: AxiosInstance): Promise<GameServerDto[]> =>
@@ -42,4 +52,22 @@ export const serverApi = {
 
   getPermissions: (client: AxiosInstance, uuid: string): Promise<PermissionDto[]> =>
     client.get(`/game-server/${uuid}/permissions`).then((r) => r.data),
+
+  updateServer: (client: AxiosInstance, uuid: string, dto: GameServerUpdateDto): Promise<GameServerDto> =>
+    client.put(`/game-server/${uuid}`, dto).then((r) => r.data),
+
+  updateDesign: (client: AxiosInstance, uuid: string, design: ServerDesign): Promise<void> =>
+    client.patch(`/game-server/${uuid}/design`, { design }),
+
+  updateRCON: (client: AxiosInstance, uuid: string, config: Omit<RCONConfiguration, 'port_valid' | 'password_valid'>): Promise<void> =>
+    client.patch(`/game-server/${uuid}/rcon-configuration`, config),
+
+  createWebhook: (client: AxiosInstance, uuid: string, webhook: Omit<WebhookDto, 'uuid'>): Promise<WebhookDto> =>
+    client.post(`/game-server/${uuid}/webhooks`, webhook).then((r) => r.data),
+
+  updateWebhook: (client: AxiosInstance, uuid: string, webhookUuid: string, webhook: WebhookDto): Promise<WebhookDto> =>
+    client.put(`/game-server/${uuid}/webhooks/${webhookUuid}`, webhook).then((r) => r.data),
+
+  deleteWebhook: (client: AxiosInstance, uuid: string, webhookUuid: string): Promise<void> =>
+    client.delete(`/game-server/${uuid}/webhooks/${webhookUuid}`),
 };

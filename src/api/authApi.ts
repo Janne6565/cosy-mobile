@@ -14,7 +14,7 @@ export async function login(
 ): Promise<void> {
   console.log('[auth] POST', `${baseUrl}/auth/login?tokenMode=direct`);
   const response = await axios.post<DirectLoginResponse>(
-    `${baseUrl}/auth/login?tokenMode=direct`,
+    `${baseUrl}/auth/login?tokenMode=DIRECT`,
     { username, password },
     { headers: { 'Content-Type': 'application/json' } },
   );
@@ -24,7 +24,7 @@ export async function login(
 
   // Response may be wrapped in ApiResponse envelope: { data: { refreshToken }, success, ... }
   const body = response.data as any;
-  const refreshToken = body?.refreshToken ?? body?.data?.refreshToken;
+  const refreshToken = body?.data?.refresh_token;
   if (!refreshToken) {
     throw new Error(
       'No refreshToken in login response. Response was: ' + JSON.stringify(body),

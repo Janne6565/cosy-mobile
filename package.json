@@ -6,11 +6,14 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "gen:api": "curl http://localhost:8080/api/v3/api-docs > openapi-backend.json && npx orval"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@reduxjs/toolkit": "^2.11.2",
+    "@stomp/stompjs": "^7.3.0",
+    "@tanstack/react-query": "^5.100.14",
     "axios": "^1.14.0",
     "babel-preset-expo": "^55.0.15",
     "date-fns": "^4.1.0",
@@ -33,6 +36,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.4",
+    "orval": "^7.13.2",
     "typescript": "~5.9.2"
   },
   "overrides": {

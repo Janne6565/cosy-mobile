@@ -10,6 +10,8 @@ export default function SettingsLayout() {
         headerTitleStyle: { fontWeight: '600' },
         contentStyle: { backgroundColor: Colors.background },
       }}
-    />
+    >
+      <Stack.Screen name="index" options={{ title: 'Settings' }} />
+    </Stack>
   );
 }

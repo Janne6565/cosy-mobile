@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { useGlobalSearchParams, useNavigation } from 'expo-router';
+import { useGlobalSearchParams, useNavigation, router } from 'expo-router';
 import { useLayoutEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useServer } from '../../../../src/hooks/useServers';
@@ -19,8 +19,8 @@ type Tab = 'overview' | 'logs' | 'metrics';
 
 const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'overview', label: 'Overview', icon: 'grid-outline' },
-  { key: 'logs', label: 'Logs & Console', icon: 'terminal-outline' },
-  { key: 'metrics', label: 'Metrics', icon: 'stats-chart-outline' },
+  { key: 'logs', label: 'Console', icon: 'terminal-outline' },
+  { key: 'metrics', label: 'Metrics', icon: 'bar-chart-outline' },
 ];
 
 export default function ServerDetailScreen() {
@@ -32,12 +32,22 @@ export default function ServerDetailScreen() {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerShown: true,
-      headerStyle: { backgroundColor: Colors.surface },
+      headerStyle: { backgroundColor: Colors.background },
       headerTintColor: Colors.text,
       headerTitleStyle: { fontWeight: '600', fontSize: 16 },
       title: server?.server_name ?? 'Server',
+      headerShadowVisible: false,
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => router.push(`/(app)/servers/${uuid}/settings`)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ marginRight: 4 }}
+        >
+          <Ionicons name="settings-outline" size={22} color={Colors.text} />
+        </TouchableOpacity>
+      ),
     });
-  }, [server?.server_name]);
+  }, [server?.server_name, uuid]);
 
   if (!server) {
     return (
@@ -49,37 +59,35 @@ export default function ServerDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Segmented control */}
-      <View style={styles.segmentBar}>
-        <View style={styles.segmentContainer}>
-          {TABS.map((tab) => {
-            const active = activeTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={[styles.segment, active && styles.segmentActive]}
-                onPress={() => setActiveTab(tab.key)}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name={tab.icon}
-                  size={14}
-                  color={active ? Colors.text : Colors.textMuted}
-                />
-                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      {/* Tab bar */}
+      <View style={styles.tabBar}>
+        {TABS.map((tab) => {
+          const active = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, active && styles.tabActive]}
+              onPress={() => setActiveTab(tab.key)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={active ? (tab.icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap) : tab.icon}
+                size={16}
+                color={active ? Colors.primary : Colors.textMuted}
+              />
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Tab content */}
       <View style={styles.content}>
         {activeTab === 'overview' && <OverviewTab uuid={uuid} server={server} />}
         {activeTab === 'logs' && <LogsConsoleTab uuid={uuid} />}
-        {activeTab === 'metrics' && <MetricsTab uuid={uuid} />}
+        {activeTab === 'metrics' && <MetricsTab uuid={uuid} server={server} />}
       </View>
     </View>
   );
@@ -88,39 +96,32 @@ export default function ServerDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  segmentBar: {
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.sm,
-    paddingTop: 6,
-    paddingBottom: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-  },
-  segmentContainer: {
+  tabBar: {
     flexDirection: 'row',
-    backgroundColor: Colors.surfaceAlt,
-    borderRadius: Radius.sm,
-    padding: 3,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: 6,
   },
-  segment: {
+  tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
-    borderRadius: Radius.sm - 1,
-    gap: 4,
+    paddingVertical: 10,
+    borderRadius: Radius.sm,
+    gap: 6,
+    backgroundColor: Colors.surface,
   },
-  segmentActive: {
-    backgroundColor: Colors.primary,
+  tabActive: {
+    backgroundColor: Colors.primaryMuted,
   },
-  segmentText: {
+  tabText: {
     color: Colors.textMuted,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
-  segmentTextActive: {
-    color: Colors.text,
+  tabTextActive: {
+    color: Colors.primary,
   },
   content: { flex: 1 },
 });

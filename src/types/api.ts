@@ -50,21 +50,87 @@ export interface AccessGroup {
   name: string;
 }
 
+export type LayoutSize = 'SMALL' | 'MEDIUM' | 'LARGE';
+export type DashboardLayoutType = 'METRIC' | 'LOGS' | 'FREETEXT';
+
+export interface MetricLayout {
+  uuid?: string;
+  size?: LayoutSize;
+  metric_type?: string;
+}
+
+export interface KeyValueEntry {
+  key: string;
+  value: string;
+}
+
+export interface PrivateDashboardLayout {
+  uuid?: string;
+  size?: LayoutSize;
+  layout_type?: DashboardLayoutType;
+  metric_type?: string;
+  title?: string;
+  content?: KeyValueEntry[];
+  valid?: boolean;
+}
+
+export type ServerDesign = 'HOUSE' | 'CASTLE';
+
+export interface RCONConfiguration {
+  enabled?: boolean;
+  port?: number;
+  password?: string;
+  port_valid?: boolean;
+  password_valid?: boolean;
+}
+
+export interface VolumeMountDto {
+  uuid?: string;
+  container_path: string;
+}
+
+export interface WebhookDto {
+  uuid?: string;
+  webhook_type?: string;
+  webhook_url?: string;
+  enabled?: boolean;
+  subscribed_events?: string[];
+}
+
 export interface GameServerDto {
   uuid: string;
   server_name: string;
   owner: UserDto;
   status: ServerStatus;
-  design: 'DARK' | 'LIGHT';
+  design?: ServerDesign;
   created_on: string;
   timestamp_last_started?: string;
   game_uuid?: string;
+  external_game_id?: number;
   docker_image_name?: string;
   docker_image_tag?: string;
   docker_hardware_limits?: HardwareLimits;
+  execution_command?: string[];
   port_mappings?: PortMapping[];
   environment_variables?: { key: string; value: string }[];
+  volume_mounts?: VolumeMountDto[];
   access_groups?: AccessGroup[];
+  rcon_configuration?: RCONConfiguration;
+  metric_layout?: MetricLayout[];
+  private_dashboard_layouts?: PrivateDashboardLayout[];
+  webhooks?: WebhookDto[];
+}
+
+export interface GameServerUpdateDto {
+  server_name: string;
+  docker_image_name: string;
+  docker_image_tag: string;
+  docker_hardware_limits?: HardwareLimits;
+  port_mappings?: PortMapping[];
+  execution_command?: string[];
+  environment_variables?: { key: string; value: string }[];
+  volume_mounts?: VolumeMountDto[];
+  external_game_id?: number;
 }
 
 export interface ServerStatusDto {

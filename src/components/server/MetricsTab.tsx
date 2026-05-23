@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,50 +9,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useActiveInstance } from '../../hooks/useActiveInstance';
+import { useSubscription } from '../../hooks/useSubscription';
 import { serverApi } from '../../api/serverApi';
-import { MetricPointDto } from '../../types/api';
+import { GameServerDto, MetricPointDto } from '../../types/api';
+import { MetricBar, formatBytes } from '../MetricBar';
+import { MetricWidget } from './widgets/MetricWidget';
 import { Colors, Radius, Spacing } from '../../constants/theme';
-
-function formatBytes(bytes: number): string {
-  const gb = bytes / 1024 / 1024 / 1024;
-  if (gb >= 1) return `${gb.toFixed(1)} GB`;
-  const mb = bytes / 1024 / 1024;
-  if (mb >= 1) return `${mb.toFixed(0)} MB`;
-  return `${(bytes / 1024).toFixed(0)} KB`;
-}
-
-function MetricBar({ label, value, max, unit, formatValue }: {
-  label: string;
-  value: number;
-  max: number;
-  unit: string;
-  formatValue?: (v: number) => string;
-}) {
-  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  const color = pct > 85 ? Colors.failed : pct > 60 ? Colors.awaiting : Colors.running;
-  const display = formatValue ? formatValue(value) : `${value.toFixed(1)}${unit}`;
-
-  return (
-    <View style={barStyles.container}>
-      <View style={barStyles.header}>
-        <Text style={barStyles.label}>{label}</Text>
-        <Text style={[barStyles.value, { color }]}>{display}</Text>
-      </View>
-      <View style={barStyles.track}>
-        <View style={[barStyles.fill, { width: `${pct}%` as any, backgroundColor: color }]} />
-      </View>
-    </View>
-  );
-}
-
-const barStyles = StyleSheet.create({
-  container: { gap: 6 },
-  header: { flexDirection: 'row', justifyContent: 'space-between' },
-  label: { color: Colors.textSecondary, fontSize: 13 },
-  value: { fontSize: 13, fontWeight: '600', fontFamily: 'Courier' },
-  track: { height: 6, backgroundColor: Colors.surfaceAlt, borderRadius: Radius.full, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: Radius.full },
-});
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -65,9 +27,10 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 interface Props {
   uuid: string;
+  server: GameServerDto;
 }
 
-export function MetricsTab({ uuid }: Props) {
+export function MetricsTab({ uuid, server }: Props) {
   const { apiClient } = useActiveInstance();
   const [metrics, setMetrics] = useState<MetricPointDto[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +52,21 @@ export function MetricsTab({ uuid }: Props) {
   };
 
   useEffect(() => { fetchMetrics(); }, [uuid, apiClient]);
+
+  // Live metrics via WebSocket
+  const handleMetricMessage = useCallback((point: MetricPointDto) => {
+    if (point?.metric_values) {
+      setMetrics((prev) => {
+        if (!prev) return [point];
+        return [...prev, point];
+      });
+    }
+  }, []);
+
+  useSubscription<MetricPointDto>(
+    `/topics/game-servers/${uuid}/metrics`,
+    handleMetricMessage,
+  );
 
   if (loading && !metrics) {
     return (
@@ -122,38 +100,58 @@ export function MetricsTab({ uuid }: Props) {
 
   const latest = metrics[metrics.length - 1];
   const mv = latest.metric_values;
+  const metricLayout = server.metric_layout;
+  const hasLayout = metricLayout && metricLayout.length > 0;
 
   return (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-      {/* Usage bars */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Current Usage</Text>
-        {mv.cpu_percent != null && (
-          <MetricBar label="CPU" value={mv.cpu_percent} max={100} unit="%" />
-        )}
-        {mv.memory_percent != null && (
-          <MetricBar label="Memory" value={mv.memory_percent} max={100} unit="%" />
-        )}
-        {mv.memory_usage != null && mv.memory_limit != null && mv.memory_limit > 0 && (
-          <MetricBar
-            label="Memory (absolute)"
-            value={mv.memory_usage}
-            max={mv.memory_limit}
-            unit=""
-            formatValue={(v) => `${formatBytes(v)} / ${formatBytes(mv.memory_limit!)}`}
-          />
-        )}
-      </View>
-
-      {/* Network & I/O */}
-      {(mv.network_input != null || mv.network_output != null || mv.block_read != null || mv.block_write != null) && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Network & I/O</Text>
-          {mv.network_input != null && <InfoRow label="Network In" value={formatBytes(mv.network_input)} />}
-          {mv.network_output != null && <InfoRow label="Network Out" value={formatBytes(mv.network_output)} />}
-          {mv.block_read != null && <InfoRow label="Block Read" value={formatBytes(mv.block_read)} />}
-          {mv.block_write != null && <InfoRow label="Block Write" value={formatBytes(mv.block_write)} />}
+      {hasLayout ? (
+        // Layout-driven rendering
+        <View style={styles.grid}>
+          {metricLayout.map((entry) => (
+            <View
+              key={entry.uuid ?? entry.metric_type}
+              style={entry.size === 'SMALL' ? styles.halfItem : styles.fullItem}
+            >
+              <MetricWidget
+                metricType={entry.metric_type ?? ''}
+                metricValues={mv}
+              />
+            </View>
+          ))}
         </View>
+      ) : (
+        // Fallback: hardcoded view
+        <>
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Current Usage</Text>
+            {mv.cpu_percent != null && (
+              <MetricBar label="CPU" value={mv.cpu_percent} max={100} unit="%" />
+            )}
+            {mv.memory_percent != null && (
+              <MetricBar label="Memory" value={mv.memory_percent} max={100} unit="%" />
+            )}
+            {mv.memory_usage != null && mv.memory_limit != null && mv.memory_limit > 0 && (
+              <MetricBar
+                label="Memory (absolute)"
+                value={mv.memory_usage}
+                max={mv.memory_limit}
+                unit=""
+                formatValue={(v) => `${formatBytes(v)} / ${formatBytes(mv.memory_limit!)}`}
+              />
+            )}
+          </View>
+
+          {(mv.network_input != null || mv.network_output != null || mv.block_read != null || mv.block_write != null) && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Network & I/O</Text>
+              {mv.network_input != null && <InfoRow label="Network In" value={formatBytes(mv.network_input)} />}
+              {mv.network_output != null && <InfoRow label="Network Out" value={formatBytes(mv.network_output)} />}
+              {mv.block_read != null && <InfoRow label="Block Read" value={formatBytes(mv.block_read)} />}
+              {mv.block_write != null && <InfoRow label="Block Write" value={formatBytes(mv.block_write)} />}
+            </View>
+          )}
+        </>
       )}
 
       {/* Data info */}
@@ -171,15 +169,20 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: Spacing.md, gap: Spacing.sm },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, padding: Spacing.xl },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  halfItem: { width: '48%' },
+  fullItem: { width: '100%' },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
     padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
     gap: Spacing.md,
   },
-  sectionTitle: { color: Colors.textSecondary, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionTitle: { color: Colors.textMuted, fontSize: 11, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   infoLabel: { color: Colors.textSecondary, fontSize: 13 },
   infoValue: { color: Colors.text, fontSize: 13, fontFamily: 'Courier' },
